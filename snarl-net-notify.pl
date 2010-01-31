@@ -25,7 +25,7 @@
 # History:
 #
 # 2010-01-31, eharmon
-#       version 0.6, ported from Growl to Snarl
+#       version 0.6, ported from Growl to Snarl, added a few features
 #
 # 2009-05-02, FlashCode <flashcode@flashtux.org>:
 #       version 0.5, sync with last API changes
@@ -85,7 +85,9 @@ sub message_process_init {
     weechat::hook_signal("weechat_pv", "highlight_privmsg", "");
     weechat::hook_print( "", "", "", 1, "highlight_public", "");
     weechat::hook_signal("quit", "snarl_unregister", "");
-    weechat::hook_signal("irc_server_connected", "server_connected", "");
+    weechat::hook_signal("irc_server_connected", "server_connection_change", "");
+    weechat::hook_signal("irc_server_disconnected", "server_connection_change", "");
+
 }
 
 #
@@ -114,14 +116,20 @@ sub highlight_public {
 }
 
 #
-# Send a notification when we connect
+# Send a notification when the connection status changes
 #
-sub server_connected {
+sub server_connection_change {
 	my ($data, $signal, $name) = @_;
-	send_message("Connected", $name);
+	if($signal eq "irc_server_connected") {
+		$state = "Connected to";
+	} else {
+		$state = "Disconnected from";
+	}
+	snarl_notify("IRC", "$state $name", 4);
 	return weechat::WEECHAT_RC_OK;
 }
 
+#
 #
 # Handle the SNP response codes
 #
@@ -190,16 +198,20 @@ sub prt {
 #
 # Send notification through SNP
 #
-# args: $title, $description
+# args: $title, $description, [$length]
 #
 sub snarl_notify {
 	$title = $_[0];
 	$desc = $_[1];
+	$length = $_[2];
+	if(!$length) {
+		$length = 8;
+	}
 
 	my $sock = get_sock();
 	if($sock) {
 		STUPID_GOTO:
-		print $sock "type=SNP#?version=1.0#?action=notification#?app=$snarl_app#?class=1#?title=$title#?text=$desc#?timeout=10\r\n";
+		print $sock "type=SNP#?version=1.0#?action=notification#?app=$snarl_app#?class=1#?title=$title#?text=$desc#?timeout=$length\r\n";
 		$lines = <$sock>;
 		$code = get_code($lines);
 		# Only handling this error, everything else let's just give up on, as they are hard to handle
