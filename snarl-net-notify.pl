@@ -20,6 +20,8 @@
 #
 # Snarl Notification script over network
 #
+# Based on growl-net-notify.pl by kinabalu
+#
 # History:
 #
 # 2010-01-31, eharmon
@@ -41,11 +43,11 @@
 #	version 0.1, initial version rewritten from snarl-notify
 #   - original inspiration from snarl-notify.pl author Zak Elep
 #
-# /snarl and /gl can be used in combination with these actions
+# /snarl and can be used in combination with these actions
 #
 # /snarl on
 # /snarl off
-# /snarl setup [host] [password]
+# /snarl setup [host] [port]
 # /snarl inactive [time_in_seconds]
 # /snarl status
 # /snarl test [message]
@@ -67,6 +69,7 @@ use integer;
 my $snarl_app = "WeeChat";				# name given to Snarl for configuration
 my $snarl_active = 1;
 
+# SNP response codes
 use constant SNP_SUCCESS 			=> 0;
 use constant SNP_ERROR_FAILED			=> 101;
 use constant SNP_ERROR_UNKNOWN_COMMAND 		=> 102;
@@ -110,12 +113,18 @@ sub highlight_public {
 	return weechat::WEECHAT_RC_OK;	
 }
 
+#
+# Send a notification when we connect
+#
 sub server_connected {
 	my ($data, $signal, $name) = @_;
 	send_message("Connected", $name);
 	return weechat::WEECHAT_RC_OK;
 }
 
+#
+# Handle the SNP response codes
+#
 sub get_code {
 	my ($response) = @_;
 	@split = split(/\//, $response);
@@ -130,6 +139,9 @@ sub get_code {
 	return $code;
 }
 
+#
+# Get a connection to Snarl
+#
 sub get_sock {
 	$host = &getc('snarl_net_client');
 	$port = &getc('snarl_net_port');
@@ -139,7 +151,9 @@ sub get_sock {
 	return $sock;
 }
 	
-
+#
+# Send a message over SNP
+#
 sub send_message {
 	my ( $nick, $message ) = @_;
 	
@@ -174,27 +188,11 @@ sub prt {
 }
 
 #
-# Send notification through snarl
+# Send notification through SNP
 #
-# args: $host, $pass, $port, $application_name, $title, $description
+# args: $title, $description
 #
 sub snarl_notify {
-#	$title = $_[0];
-#	$description = $_[1];
-#	$timeout = 10;
-	# It wastes time, but let's always re-reg.
-#	snarl_register( &getc('snarl_net_client'), &getc('snarl_net_port'), "$snarl_app" );
-	# If we got a new socket, try notifying
-#	if($sock) {
-#		print $sock "type=SNP#?version=1.0#?action=notification#?app=$snarl_app#?class=1#?title=$title#?text=$description#?timeout=10\r\n";
-#		$lines = <$sock>;
-#		prt($lines);
-#	}
-#	else {
-#		prt("Socket broked");
-#	}
-#	close($sock);
-
 	$title = $_[0];
 	$desc = $_[1];
 
@@ -205,6 +203,7 @@ sub snarl_notify {
 		$lines = <$sock>;
 		$code = get_code($lines);
 		# Only handling this error, everything else let's just give up on, as they are hard to handle
+		# If our registration has somehow died (remote computer restarted, etc), re-register and try to send again
 		if($code == SNP_ERROR_NOT_REGISTERED) {
 			snarl_register();
 			goto STUPID_GOTO;
@@ -213,13 +212,10 @@ sub snarl_notify {
 	}
 }
 
-# Register your app with Growl system
 #
-# args: $host, $pass, $port, $app
+# Register your app with Snarl through SNP
 #
 sub snarl_register {	
-#	$host = $_[0];
-#	$port = $_[1];
 	my $sock = get_sock();
 	if($sock) {
 		print $sock "type=SNP#?version=1.0#?action=register#?app=$snarl_app\r\n";
@@ -243,6 +239,9 @@ sub snarl_register {
 	}
 }
 
+#
+# Unregister application through SNP
+#
 sub snarl_unregister {
 	my $sock = get_sock();
 	if($sock) {
@@ -321,17 +320,19 @@ sub handler {
 #
 my $version = '0.6';
    
-	weechat::register("snarl-net-notify", "eharmon, kinabalu <andrew\@mysticcoders.com>", $version, "GPL3", "Send Weechat notifications to Snarl", "", "");
+weechat::register("snarl-net-notify", "eharmon, kinabalu <andrew\@mysticcoders.com>", $version, "GPL3", "Send Weechat notifications to Snarl", "", "");
 		
-	weechat::hook_command("snarl", "setup the snarl notify script",
-								  "on|off|setup [host] [port]|inactive [time_in_seconds]|status|help",
-								   "on: turn on snarl notifications (default)\n"
-								  ."off: turn off snarl notifications\n"
-								  ."setup [host] [port]: change the parameters for registration/notification with Snarl\n"
-								  ."inactive [time_in_seconds]: number of seconds of inactivity before we notify (default: 30)\n"
-								  ."status: gives info on notification and inactivity settings\n"
-								  ."test [message]: send a test message\n",
-								  "on|off|setup|inactive|status","handler","");
+weechat::hook_command("snarl", "setup the snarl notify script",
+
+                               "on|off|setup [host] [port]|inactive [time_in_seconds]|status|help",
+                               "on: turn on snarl notifications (default)\n".
+                               "off: turn off snarl notifications\n".
+                               "setup [host] [port]: change the parameters for registration/notification with Snarl\n".
+                               "inactive [time_in_seconds]: number of seconds of inactivity before we notify (default: 30)\n".
+                               "status: gives info on notification and inactivity settings\n".
+                               "test [message]: send a test message\n",
+
+                               "on|off|setup|inactive|status", "handler", "");
 
 my $default_snarl_net_client = "localhost";
 my $default_snarl_net_inactivity = 30;
@@ -344,7 +345,5 @@ my $default_snarl_net_port = 9887;				# default UDP port used by Snarl
 # register our app with snarl		
 snarl_register();
 
-# send up a we're here and notifying 
-#snarl_notify( &getc('snarl_net_client'), &getc('snarl_net_port'), "$snarl_app", "Starting Up", "Weechat notification through Growl = on" );
-
+# register our hooks in WeeChat
 message_process_init();
