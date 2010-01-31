@@ -40,10 +40,10 @@
 #	version 0.2, removed need for Parse::IRC
 #
 # 2009-04-10, kinabalu <andrew AT mysticcoders DOT com>
-#	version 0.1, initial version rewritten from snarl-notify
-#   - original inspiration from snarl-notify.pl author Zak Elep
+#	version 0.1, initial version rewritten from growl-notify
+#   - original inspiration from growl-notify.pl author Zak Elep
 #
-# /snarl and can be used in combination with these actions
+# /snarl can be used in combination with these actions
 #
 # /snarl on
 # /snarl off
