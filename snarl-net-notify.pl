@@ -1,0 +1,350 @@
+#
+# Copyright (c) 2010 by Eric Harmon (eharmon.net)
+# Copyright (c) 2009 by kinabalu (andrew AT mysticcoders DOT com)
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+#
+# Snarl Notification script over network
+#
+# History:
+#
+# 2010-01-31, eharmon
+#       version 0.6, ported from Growl to Snarl
+#
+# 2009-05-02, FlashCode <flashcode@flashtux.org>:
+#       version 0.5, sync with last API changes
+#
+# 2009-04-25, kinabalu <andrew AT mysticcoders DOT com>
+#       version 0.4, version upgrade, minor cleanup of source
+#
+# 2009-04-18, kinabalu <andrew AT mysticcoders DOT com>
+#	version 0.3, version upgraded to support weechat 0.3.0+
+#
+# 2009-04-16, kinabalu <andrew AT mysticcoders DOT com>
+#	version 0.2, removed need for Parse::IRC
+#
+# 2009-04-10, kinabalu <andrew AT mysticcoders DOT com>
+#	version 0.1, initial version rewritten from snarl-notify
+#   - original inspiration from snarl-notify.pl author Zak Elep
+#
+# /snarl and /gl can be used in combination with these actions
+#
+# /snarl on
+# /snarl off
+# /snarl setup [host] [password]
+# /snarl inactive [time_in_seconds]
+# /snarl status
+# /snarl test [message]
+# /help snarl
+#
+# The script can be loaded into WeeChat by executing:
+#
+# /perl load snarl-net-notify.pl
+#
+# The script may also be auto-loaded by WeeChat.  See the
+# WeeChat manual for instructions about how to do this.
+#
+# This script was tested with WeeChat version 0.3.0.
+#
+
+use IO::Socket::INET;
+use integer;
+
+my $snarl_app = "WeeChat";				# name given to Snarl for configuration
+my $snarl_active = 1;
+
+use constant SNP_SUCCESS 			=> 0;
+use constant SNP_ERROR_FAILED			=> 101;
+use constant SNP_ERROR_UNKNOWN_COMMAND 		=> 102;
+use constant SNP_ERROR_TIMED_OUT		=> 103;
+use constant SNP_ERROR_BAD_PACKET		=> 107;
+use constant SNP_ERROR_NOT_RUNNING		=> 201;
+use constant SNP_ERROR_NOT_REGISTERED		=> 202;
+use constant SNP_ERROR_ALREADY_REGISTERED	=> 203;
+use constant SNP_ERROR_CLASS_ALREADY_EXISTS	=> 204;
+
+sub message_process_init {
+
+    weechat::hook_signal("weechat_pv", "highlight_privmsg", "");
+    weechat::hook_print( "", "", "", 1, "highlight_public", "");
+    weechat::hook_signal("quit", "snarl_unregister", "");
+    weechat::hook_signal("irc_server_connected", "server_connected", "");
+}
+
+#
+# 0.3.0 clean version of highlighting for private messages
+#
+sub highlight_privmsg {
+    my ( $nick, $message ) = ( $_[2] =~ /(.*?)\t(.*)/ );
+		
+	send_message($nick, $message);				
+	return weechat::WEECHAT_RC_OK;	
+}
+
+#
+# 0.3.0 clean version of highlighting for public messages
+#
+sub highlight_public {
+    my ( $data, $bufferp, undef, undef, undef, $ishilight, $nick, $message ) = @_;
+		
+	if( $ishilight == 1 ) {
+				
+        $channel = weechat::buffer_get_string( $bufferp, "localvar_channel" ) || 'UNDEF';
+
+		send_message($nick, $message . ($channel ne 'UNDEF' ? ' in ' . $channel : ''));
+	}
+	return weechat::WEECHAT_RC_OK;	
+}
+
+sub server_connected {
+	my ($data, $signal, $name) = @_;
+	send_message("Connected", $name);
+	return weechat::WEECHAT_RC_OK;
+}
+
+sub get_code {
+	my ($response) = @_;
+	@split = split(/\//, $response);
+	$code = $split[2];
+	# If the code is not running then Snarl isn't running network services, alert this error and shut down notifications
+	if($code == SNP_ERROR_NOT_RUNNING) {
+		prt("Snarl: Error! Snarl isn't accepting network connections, disabling Snarl notifications.");
+		$snarl_active = 0;
+		# Pretend like everything was fine so we don't handle the error upstream
+		return SNP_SUCCESS;
+	}
+	return $code;
+}
+
+sub get_sock {
+	$host = &getc('snarl_net_client');
+	$port = &getc('snarl_net_port');
+	$sock = new IO::Socket::INET(PeerAddr => $host,
+					PeerPort => $port,
+					Proto => 'tcp');
+	return $sock;
+}
+	
+
+sub send_message {
+	my ( $nick, $message ) = @_;
+	
+	my $inactivity = 0;
+	
+	$inactivity = weechat::info_get("inactivity", "");
+		
+	if((&getc('snarl_net_inactivity') - $inactivity) <= 0 && $snarl_active) {
+		snarl_notify( "IRC: $nick", "$message" );
+	}			
+}
+
+#
+# smaller way to do weechat::get_plugin_config
+#
+sub getc {
+	return weechat::config_get_plugin($_[0]);	
+}
+
+#
+# smaller way to do weechat::get_plugin_config
+#
+sub setc {
+	return weechat::config_set_plugin($_[0], $_[1]);	
+}
+
+#
+# print function
+# 
+sub prt {
+	weechat::print("buffer", $_[0]);
+}
+
+#
+# Send notification through snarl
+#
+# args: $host, $pass, $port, $application_name, $title, $description
+#
+sub snarl_notify {
+#	$title = $_[0];
+#	$description = $_[1];
+#	$timeout = 10;
+	# It wastes time, but let's always re-reg.
+#	snarl_register( &getc('snarl_net_client'), &getc('snarl_net_port'), "$snarl_app" );
+	# If we got a new socket, try notifying
+#	if($sock) {
+#		print $sock "type=SNP#?version=1.0#?action=notification#?app=$snarl_app#?class=1#?title=$title#?text=$description#?timeout=10\r\n";
+#		$lines = <$sock>;
+#		prt($lines);
+#	}
+#	else {
+#		prt("Socket broked");
+#	}
+#	close($sock);
+
+	$title = $_[0];
+	$desc = $_[1];
+
+	my $sock = get_sock();
+	if($sock) {
+		STUPID_GOTO:
+		print $sock "type=SNP#?version=1.0#?action=notification#?app=$snarl_app#?class=1#?title=$title#?text=$desc#?timeout=10\r\n";
+		$lines = <$sock>;
+		$code = get_code($lines);
+		# Only handling this error, everything else let's just give up on, as they are hard to handle
+		if($code == SNP_ERROR_NOT_REGISTERED) {
+			snarl_register();
+			goto STUPID_GOTO;
+		}
+		close($sock);
+	}
+}
+
+# Register your app with Growl system
+#
+# args: $host, $pass, $port, $app
+#
+sub snarl_register {	
+#	$host = $_[0];
+#	$port = $_[1];
+	my $sock = get_sock();
+	if($sock) {
+		print $sock "type=SNP#?version=1.0#?action=register#?app=$snarl_app\r\n";
+		$line = <$sock>;
+		$code = get_code($line);
+		if($code == SNP_SUCCESS || $code == SNP_ERROR_ALREADY_REGISTERED) {
+			print $sock "type=SNP#?version=1.0#?action=add_class#?app=$snarl_app#?class=1#?title=IRC Notification\r\n";
+			$line = <$sock>;
+			$code = get_code($line);
+			if($code == SNP_SUCCESS || $code == SNP_CLASS_ALREADY_EXISTS) {
+				prt("Snarl registered at $host:$port");
+			} else {
+				prt("Couldn't register notifcation: $line");
+			}
+		} else {
+			prt("Couldn't register app: $line");
+		}
+		close($sock);
+	} else {
+		prt("Connection to $host:$port failed: $@");
+	}
+}
+
+sub snarl_unregister {
+	my $sock = get_sock();
+	if($sock) {
+		print $sock "type=SNP#?version=1.0#?action=unregister#?app=$snarl_app\r\n";
+		close($sock);
+	}
+}
+
+#
+# Handler will process commands
+#
+# /snarl on
+# /snarl off
+# /snarl setup [host] [password] [port]
+# /snarl inactive [time_in_seconds]
+# /snarl status
+# /snarl test [message]
+# /help snarl
+#
+sub handler {
+	no strict 'refs';	# access symbol table
+	
+        my $data = shift;
+	my $buffer = shift;
+	my $argList = shift;
+
+	my @args = split(/ /, $argList);
+	my $command = $args[0];	
+		
+	if(!$command) {
+		prt("Rawr! (try /help snarl for help on using this plugin)");
+		return weechat::WEECHAT_RC_OK;
+	}
+	
+	if($command eq "off") {
+		$snarl_active = 0;
+		prt("Snarl notifications: OFF");
+		return weechat::WEECHAT_RC_OK;
+	} elsif($command eq "on") {
+		$snarl_active = 1;
+		prt("Snarl notifications: ON");
+		return weechat::WEECHAT_RC_OK;
+	} elsif($command eq "inactive") {
+		if(exists $args[1] && $args[1] >= 0) {
+			setc("snarl_net_inactivity", $args[1]);
+			prt("Snarl notifications inactivity set to: " . $args[1] . "s");
+			return weechat::WEECHAT_RC_OK;
+		}
+		return weechat::WEECHAT_RC_ERROR;	
+	} elsif($command eq "setup") {
+		if(exists $args[1] && $args[1] ne "") {
+			setc("snarl_net_client", $args[1]);			
+		} 
+		if(exists $args[2] && $args[2] ne "") {
+			setc("snarl_net_port", $args[2]);
+		}
+		snarl_register();				
+		prt("Snarl setup re-registered with: [host: " . &getc('snarl_net_client') . ":"  . &getc('snarl_net_port') . "]"); 
+		return weechat::WEECHAT_RC_OK;
+	} elsif($command eq "status") {
+		prt("Snarl notifications: " . ($snarl_active ? "ON" : "OFF") . ", inactivity timeout: " . &getc("snarl_net_inactivity"));
+		return weechat::WEECHAT_RC_OK;
+	} elsif($command eq "test") {
+		my $test_message = substr $argList, 5;
+		prt("Sending test message: " . $test_message);
+		snarl_notify("Test Message", $test_message );
+		return weechat::WEECHAT_RC_OK;
+	}
+
+    return weechat::WEECHAT_RC_ERROR;
+}
+
+
+#
+# setup
+#
+my $version = '0.6';
+   
+	weechat::register("snarl-net-notify", "eharmon, kinabalu <andrew\@mysticcoders.com>", $version, "GPL3", "Send Weechat notifications to Snarl", "", "");
+		
+	weechat::hook_command("snarl", "setup the snarl notify script",
+								  "on|off|setup [host] [port]|inactive [time_in_seconds]|status|help",
+								   "on: turn on snarl notifications (default)\n"
+								  ."off: turn off snarl notifications\n"
+								  ."setup [host] [port]: change the parameters for registration/notification with Snarl\n"
+								  ."inactive [time_in_seconds]: number of seconds of inactivity before we notify (default: 30)\n"
+								  ."status: gives info on notification and inactivity settings\n"
+								  ."test [message]: send a test message\n",
+								  "on|off|setup|inactive|status","handler","");
+
+my $default_snarl_net_client = "localhost";
+my $default_snarl_net_inactivity = 30;
+my $default_snarl_net_port = 9887;				# default UDP port used by Snarl
+
+&setc("snarl_net_client", $default_snarl_net_client) if (&getc("snarl_net_client") eq "");
+&setc("snarl_net_inactivity", $default_snarl_net_inactivity) if (&getc("snarl_net_inactivity") eq "");
+&setc("snarl_net_port", $default_snarl_net_port) if (&getc("snarl_net_port") eq "");
+		
+# register our app with snarl		
+snarl_register();
+
+# send up a we're here and notifying 
+#snarl_notify( &getc('snarl_net_client'), &getc('snarl_net_port'), "$snarl_app", "Starting Up", "Weechat notification through Growl = on" );
+
+message_process_init();
