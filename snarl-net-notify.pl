@@ -96,7 +96,7 @@ sub message_process_init {
 sub highlight_privmsg {
     my ( $nick, $message ) = ( $_[2] =~ /(.*?)\t(.*)/ );
 		
-	send_message($nick, $message);				
+	send_message("IRC query from $nick", $message);				
 	return weechat::WEECHAT_RC_OK;	
 }
 
@@ -110,7 +110,7 @@ sub highlight_public {
 				
         $channel = weechat::buffer_get_string( $bufferp, "localvar_channel" ) || 'UNDEF';
 
-		send_message($nick, $message . ($channel ne 'UNDEF' ? ' in ' . $channel : ''));
+		send_message("IRC highlight from $nick", $message . ($channel ne 'UNDEF' ? ' in ' . $channel : ''));
 	}
 	return weechat::WEECHAT_RC_OK;	
 }
@@ -125,7 +125,7 @@ sub server_connection_change {
 	} else {
 		$state = "Disconnected from";
 	}
-	snarl_notify("IRC", "$state $name", 4);
+	send_message("IRC Connection", "$state $name", 4);
 	return weechat::WEECHAT_RC_OK;
 }
 
@@ -163,14 +163,14 @@ sub get_sock {
 # Send a message over SNP
 #
 sub send_message {
-	my ( $nick, $message ) = @_;
+	my ( $title, $message, $time ) = @_;
 	
 	my $inactivity = 0;
 	
 	$inactivity = weechat::info_get("inactivity", "");
 		
 	if((&getc('snarl_net_inactivity') - $inactivity) <= 0 && $snarl_active) {
-		snarl_notify( "IRC: $nick", "$message" );
+		snarl_notify( "$title", "$message", $time );
 	}			
 }
 
