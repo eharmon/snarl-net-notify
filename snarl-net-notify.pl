@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2010 by Eric Harmon (eharmon.net)
+# Copyright (c) 2010 by Eric Harmon (http://eharmon.net)
 # Copyright (c) 2009 by kinabalu (andrew AT mysticcoders DOT com)
 #
 # This program is free software; you can redistribute it and/or modify
@@ -21,10 +21,11 @@
 # Snarl Notification script over network
 #
 # Based on growl-net-notify.pl by kinabalu
+# Code and README availible at: http://github.com/eharmon/snarl-net-notify
 #
 # History:
 #
-# 2010-01-31, eharmon
+# 2010-02-08, eharmon
 #       version 0.6, ported from Growl to Snarl, added a few features
 #
 # 2009-05-02, FlashCode <flashcode@flashtux.org>:
