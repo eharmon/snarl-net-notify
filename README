@@ -1,13 +1,19 @@
-A notifier for WeeChat which interfaces with Snarl's network notification system.
+snarl-net-notify
+================
+
+A notifier for WeeChat which interfaces with Snarl's network notification
+system.
 
 For options take a look at /help snarl.
 
-Very useful across networks when combined with SSH port forwarding. On the system
-running Snarl, SSH to the system running WeeChat, forwarding remote port 9887 to
-local port 9887. Then set snarl-net-notify to send messages to localhost:9887.
-Messages will be forwarded back to the local machine, and should pop up in Snarl.
+Very useful across networks when combined with SSH port forwarding. On the
+system running Snarl, SSH to the system running WeeChat, forwarding remote port
+9887 to local port 9887. Then set snarl-net-notify to send messages to
+localhost:9887. Messages will be forwarded back to the local machine, and
+should pop up in Snarl.
 
 If you recieve errors claiming that Snarl isn't accepting network connections,
-make sure Snarl is configured to list for incoming Growl and Snarl notifications.
+make sure Snarl is configured to listen for incoming Growl and Snarl
+notifications.
 
 Tested with WeeChat 0.3.0 and Snarl 2.21.

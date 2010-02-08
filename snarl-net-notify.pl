@@ -198,29 +198,41 @@ sub prt {
 #
 # Send notification through SNP
 #
-# args: $title, $description, [$length]
+# args: $title, $description, [$length], [$testing]
 #
 sub snarl_notify {
 	$title = $_[0];
 	$desc = $_[1];
 	$length = $_[2];
+	$testing = $_[3];
 	if(!$length) {
 		$length = 8;
 	}
 
 	my $sock = get_sock();
 	if($sock) {
-		STUPID_GOTO:
-		print $sock "type=SNP#?version=1.0#?action=notification#?app=$snarl_app#?class=1#?title=$title#?text=$desc#?timeout=$length\r\n";
-		$lines = <$sock>;
-		$code = get_code($lines);
-		# Only handling this error, everything else let's just give up on, as they are hard to handle
-		# If our registration has somehow died (remote computer restarted, etc), re-register and try to send again
-		if($code == SNP_ERROR_NOT_REGISTERED) {
-			snarl_register();
-			goto STUPID_GOTO;
+		# Loop to try again in case our registration died
+		for($n = 0; $n < 2; $n++) {
+			print $sock "type=SNP#?version=1.0#?action=notification#?app=$snarl_app#?class=1#?title=$title#?text=$desc#?timeout=$length\r\n";
+			$lines = <$sock>;
+			$code = get_code($lines);
+			# Only handling this error, everything else let's just give up on, as they are hard to handle
+			# If our registration has somehow died (remote computer restarted, etc), re-register and try to send again
+			if($code == SNP_ERROR_NOT_REGISTERED) {
+				snarl_register();
+				next;
+			# Just so people know what's going on, let's have it show the error if we're testing
+			} elsif($code != SNP_SUCCESS && $testing) {
+				prt("Snarl: Unhandled error: $code");
+				last;
+			# If everything worked, break out of the loop
+			} else {
+				last;
+			}
 		}
 		close($sock);
+	} elsif($testing) {
+		prt("Snarl: Couldn't connect to Snarl. Check port and Snarl network configuration.");
 	}
 }
 
@@ -319,7 +331,7 @@ sub handler {
 	} elsif($command eq "test") {
 		my $test_message = substr $argList, 5;
 		prt("Sending test message: " . $test_message);
-		snarl_notify("Test Message", $test_message );
+		snarl_notify("Test Message", $test_message, '', 1 );
 		return weechat::WEECHAT_RC_OK;
 	}
 
