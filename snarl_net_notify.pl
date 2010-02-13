@@ -25,6 +25,9 @@
 #
 # History:
 #
+# 2010-02-12, eharmon
+#	version 0.6.1, switched to new weechat naming standards
+#
 # 2010-02-08, eharmon
 #       version 0.6, ported from Growl to Snarl, added a few features
 #
@@ -56,7 +59,7 @@
 #
 # The script can be loaded into WeeChat by executing:
 #
-# /perl load snarl-net-notify.pl
+# /perl load snarl_net_notify.pl
 #
 # The script may also be auto-loaded by WeeChat.  See the
 # WeeChat manual for instructions about how to do this.
@@ -303,10 +306,12 @@ sub handler {
 	
 	if($command eq "off") {
 		$snarl_active = 0;
+		snarl_unregister();
 		prt("Snarl notifications: OFF");
 		return weechat::WEECHAT_RC_OK;
 	} elsif($command eq "on") {
 		$snarl_active = 1;
+		snarl_register();
 		prt("Snarl notifications: ON");
 		return weechat::WEECHAT_RC_OK;
 	} elsif($command eq "inactive") {
@@ -330,9 +335,16 @@ sub handler {
 		prt("Snarl notifications: " . ($snarl_active ? "ON" : "OFF") . ", inactivity timeout: " . &getc("snarl_net_inactivity"));
 		return weechat::WEECHAT_RC_OK;
 	} elsif($command eq "test") {
-		my $test_message = substr $argList, 5;
-		prt("Sending test message: " . $test_message);
-		snarl_notify("Test Message", $test_message, '', 1 );
+		if($snarl_active) {
+			my $test_message = "Just testing.";
+			if($args[1]) {
+				$test_message = substr $argList, 5;
+			}
+			prt("Sending test message: " . $test_message);
+			snarl_notify("Test Message", $test_message, '', 1 );
+		} else {
+			prt("Snarl isn't active, please active it to send test messages.");
+		}
 		return weechat::WEECHAT_RC_OK;
 	}
 
