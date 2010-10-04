@@ -22,8 +22,8 @@
 #
 # History:
 #
-# 2010-09-??, eharmon
-#   version 0.6.5, various code improvements
+# 2010-10-??, eharmon
+#   version 0.6.5, various code improvements, fixed errors when we can't reach Snarl
 #
 # 2010-02-12, eharmon
 #   version 0.6.1, switched to new weechat naming standards
@@ -141,16 +141,21 @@ sub server_connection_change {
 #
 sub get_code {
     my ($response) = @_;
-    @split = split(/\//, $response);
-    $code = $split[2];
-    # If the code is not running then Snarl isn't running network services, alert this error and shut down notifications
-    if($code == SNP_ERROR_NOT_RUNNING) {
-        prt("Snarl: Error! Snarl isn't accepting network connections, disabling Snarl notifications.");
-        $snarl_active = 0;
-        # Pretend like everything was fine so we don't handle the error upstream
-        return SNP_SUCCESS;
+    # If we got a response (if we didn't, we probably can't get to the Snarl port)
+    if($response) {
+        @split = split(/\//, $response);
+        $code = $split[2];
+        # If the code is not running then Snarl isn't running network services, alert this error and shut down notifications
+        if($code == SNP_ERROR_NOT_RUNNING) {
+            prt("Snarl: Error! Snarl isn't accepting network connections, disabling Snarl notifications.");
+            $snarl_active = 0;
+            # Pretend like everything was fine so we don't handle the error upstream
+            return SNP_SUCCESS;
+        }
+        return $code;
+    } else {
+        return SNP_ERROR_FAILED;
     }
-    return $code;
 }
 
 #
@@ -261,7 +266,11 @@ sub snarl_register {
                 prt("Couldn't register notifcation: $line");
             }
         } else {
-            prt("Couldn't register app: $line");
+            if($line) {
+                prt("Couldn't register app: $line");
+            } else {
+                prt("Couldn't register app: No response from Snarl.");
+            }
         }
         close($sock);
     } else {
